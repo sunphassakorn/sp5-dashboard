@@ -314,12 +314,7 @@
 <main>
   <!-- LIVE PAGE -->
   <section id="page-live" class="page active">
-    <div class="grid-cards">
-      <div class="card">
-        <div class="label">PORTFOLIO VALUE</div>
-        <div class="val" id="m-portfolio">—</div>
-        <div class="sub">start $1,000,000</div>
-      </div>
+    <div class="grid-cards" style="grid-template-columns:repeat(3,1fr)">
       <div class="card">
         <div class="label">S&amp;P FIVE YTD</div>
         <div class="val" id="m-sp5">—</div>
@@ -613,12 +608,9 @@ async function renderLive() {
   const spyRet = spyNow != null ? ((spyNow - SPY_ENTRY_2026) / SPY_ENTRY_2026) * 100 : null;
   const alpha = sp5Ret != null && spyRet != null ? sp5Ret - spyRet : null;
 
-  const elPort = document.getElementById("m-portfolio");
   const elSp5 = document.getElementById("m-sp5");
   const elSpx = document.getElementById("m-spx");
   const elAlpha = document.getElementById("m-alpha");
-  elPort.textContent = fmtMoney(portfolioValue);
-  elPort.className = "val " + cls(portfolioValue - TOTAL_USD);
   elSp5.textContent = fmtPct(sp5Ret);
   elSp5.className = "val " + cls(sp5Ret);
   elSpx.textContent = fmtPct(spyRet);
