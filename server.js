@@ -99,6 +99,18 @@ async function getYearEndpoints(year, ticker) {
   return slot;
 }
 
+async function nasdaqLatestCsv(ticker) {
+  // Pull last ~10 days from Nasdaq, return single CSV row for the most-recent close.
+  const today = new Date().toISOString().slice(0, 10);
+  const past = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+  try {
+    const rows = await nasdaqHistory(ticker.toUpperCase(), past, today);
+    if (!rows.length) return null;
+    const r = rows[rows.length - 1];
+    return `Date,Open,High,Low,Close,Volume\n${r.date},${r.close},${r.close},${r.close},${r.close},0\n`;
+  } catch (_) { return null; }
+}
+
 app.get('/api/stooq', async (req, res) => {
   const { ticker, from, to, mode } = req.query;
   if (!ticker) return res.status(400).send('ticker required');
@@ -108,11 +120,16 @@ app.get('/api/stooq', async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=60');
 
   try {
-    // No date range → user wants latest close; use light endpoint.
+    // Latest snapshot path: Stooq → Nasdaq fallback (Stooq blocks some cloud IPs).
     if (!from && !to && mode !== 'history') {
       const csv = await stooqLatest(t);
-      if (csv) return res.send(csv);
-      // Fallback: try historical (may need apikey)
+      if (csv) {
+        const lines = csv.trim().split(/\r?\n/);
+        if (lines.length >= 2) return res.send(csv);
+      }
+      const ndCsv = await nasdaqLatestCsv(t);
+      if (ndCsv) return res.send(ndCsv);
+      return res.send('Date,Open,High,Low,Close,Volume\n');
     }
     const body = await stooqHistorical(t, from, to);
     // Detect the "Get your apikey" plain-text gate
