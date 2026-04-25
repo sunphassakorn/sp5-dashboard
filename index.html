@@ -718,27 +718,51 @@ function setStatus(msg) {
   document.getElementById("status").textContent = msg;
 }
 
-async function loadEntries(year, tickers) {
-  // Inline cache covers all completed years instantly. Current year (where the
-  // exit price moves daily) still hits /api/annual for fresh data.
+function loadEntriesSync(year, tickers) {
   const inline = (PRICE_CACHE_INLINE[CUR_COUNTRY] || {})[String(year)];
-  const isCurrent = year === LIVE_YEAR;
-  if (inline && !isCurrent) {
-    const entry = {}, exit = {};
-    for (const t of tickers) {
-      if (inline.entry?.[t] != null) entry[t] = inline.entry[t];
-      if (inline.exit?.[t] != null) exit[t] = inline.exit[t];
-    }
-    return {
-      year, country: CUR_COUNTRY,
-      entryDate: inline.entryDate || `${year}-01-02`,
-      exitDate: inline.exitDate || `${year}-12-31`,
-      entry, exit, missing: tickers.filter(t => entry[t] == null || exit[t] == null)
-    };
+  if (!inline) return null;
+  const entry = {}, exit = {};
+  for (const t of tickers) {
+    if (inline.entry?.[t] != null) entry[t] = inline.entry[t];
+    if (inline.exit?.[t] != null) exit[t] = inline.exit[t];
   }
+  return {
+    year, country: CUR_COUNTRY,
+    entryDate: inline.entryDate || `${year}-01-02`,
+    exitDate: inline.exitDate || `${year}-12-31`,
+    entry, exit, missing: tickers.filter(t => entry[t] == null || exit[t] == null)
+  };
+}
+
+// Always returns inline data instantly. Use loadEntriesFresh() for live numbers.
+async function loadEntries(year, tickers) {
+  return loadEntriesSync(year, tickers) || {
+    year, country: CUR_COUNTRY, entry: {}, exit: {},
+    entryDate: `${year}-01-02`, exitDate: `${year}-12-31`,
+    missing: tickers
+  };
+}
+
+// Fetch current-year entries fresh from server (uses live current price for
+// the exit side). Only called for the current year, in the background, so the
+// UI doesn't block on it.
+async function refreshCurrentYear() {
+  const year = LIVE_YEAR;
+  const tickers = [...liveTickers(), benchmarkTicker()];
   const q = new URLSearchParams({ year, tickers: tickers.join(","), country: CUR_COUNTRY });
-  const r = await fetch(`/api/annual?${q}`);
-  return r.json();
+  try {
+    const r = await fetch(`/api/annual?${q}`);
+    const data = await r.json();
+    // Patch inline cache so subsequent reads are fresh
+    if (!PRICE_CACHE_INLINE[CUR_COUNTRY]) PRICE_CACHE_INLINE[CUR_COUNTRY] = {};
+    const slot = PRICE_CACHE_INLINE[CUR_COUNTRY][String(year)] || { entry: {}, exit: {} };
+    Object.assign(slot.entry, data.entry || {});
+    Object.assign(slot.exit, data.exit || {});
+    if (data.entryDate) slot.entryDate = data.entryDate;
+    if (data.exitDate) slot.exitDate = data.exitDate;
+    PRICE_CACHE_INLINE[CUR_COUNTRY][String(year)] = slot;
+    return data;
+  } catch (_) { return null; }
 }
 
 // ============ LIVE PAGE ============
