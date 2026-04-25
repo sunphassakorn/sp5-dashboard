@@ -1,0 +1,13 @@
+{
+  "name": "sp5-dashboard",
+  "version": "1.0.0",
+  "description": "S&P Five Strategy Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-fetch": "^2.7.0"
+  }
+}

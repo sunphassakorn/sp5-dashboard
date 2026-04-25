@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: sp5-dashboard
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20.20.2

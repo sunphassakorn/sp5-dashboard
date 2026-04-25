@@ -1,0 +1,11 @@
+<svg width="240" height="52" viewBox="0 0 240 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+  
+  <rect x="0" y="6" width="40" height="40" fill="#E07040" rx="3"></rect>
+  <polyline points="6,38 14,38 14,28 22,28 22,20 30,20 30,12 36,12" stroke="#0E0C0B" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter" fill="none"></polyline>
+  
+  <text x="52" y="38" font-family="&#39;IBM Plex Sans&#39;, &#39;Helvetica Neue&#39;, Arial, sans-serif" font-weight="700" font-size="36" letter-spacing="0" fill="#EAE6E2">S&amp;P5</text>
+  
+  <line x1="52" y1="44" x2="238" y2="44" stroke="#2a2624" stroke-width="1"></line>
+  
+  <text x="53" y="52" font-family="&#39;IBM Plex Sans&#39;, &#39;Helvetica Neue&#39;, Arial, sans-serif" font-weight="300" font-size="9" letter-spacing="4" fill="#6B6460">FIVE</text>
+</svg>

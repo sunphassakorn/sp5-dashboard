@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>S&amp;P Five Strategy Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #1F1E1C;
+    --card: #2A2825;
+    --card-2: #34322E;
+    --border: #3A3835;
+    --border-strong: #4A4844;
+    --text: #E8E6E1;
+    --text-soft: #C8C5BD;
+    --muted: #908A82;
+    --accent: #D97757;           /* Claude orange (dark-mode tuned) */
+    --accent-soft: #E8A38A;
+    --sp5: #D97757;
+    --spx: #8FA0B3;              /* warm steel, brighter for dark bg */
+    --pos: #6FAF8B;
+    --neg: #E07A6E;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  code, .mono, .num { font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .serif { font-family: "Fraunces", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif; font-optical-sizing: auto; }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: saturate(180%) blur(8px);
+  }
+  header h1 {
+    font-family: "Fraunces", ui-serif, Georgia, serif;
+    font-weight: 400;
+    font-size: 22px;
+    line-height: 1.1;
+    margin: 0;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  header h1 .accent {
+    font-style: italic;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  nav.tabs {
+    display: flex;
+    gap: 2px;
+    background: rgba(255,255,255,0.04);
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  nav.tabs button {
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    padding: 8px 18px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0;
+    cursor: pointer;
+    border-radius: 999px;
+    transition: color 0.15s, background 0.15s;
+  }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button.active {
+    background: var(--card-2);
+    color: var(--accent);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .status {
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .btn {
+    background: var(--accent);
+    color: #FFFFFF;
+    border: 1px solid var(--accent);
+    padding: 8px 18px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 999px;
+    transition: background 0.15s, transform 0.05s;
+  }
+  .btn:hover { background: #C66640; }
+  .btn:active { transform: translateY(1px); }
+  main { padding: 32px 32px 60px; max-width: 1280px; margin: 0 auto; }
+  .page { display: none; }
+  .page.active { display: block; animation: fade 0.25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+
+  .grid-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px 24px;
+    box-shadow: var(--shadow);
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--border-strong); }
+  .card .label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    font-weight: 500;
+  }
+  .card .val {
+    font-family: "Fraunces", ui-serif, Georgia, serif;
+    font-weight: 400;
+    font-size: 34px;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .card .sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .pos { color: var(--pos); }
+  .neg { color: var(--neg); }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 26px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+  .panel h2 {
+    font-family: "Fraunces", ui-serif, Georgia, serif;
+    font-size: 20px;
+    line-height: 1.2;
+    color: var(--text);
+    margin: 0 0 18px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    text-align: right;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  th:first-child, td:first-child { text-align: left; }
+  th {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  tbody tr { transition: background 0.15s; }
+  tbody tr:hover { background: rgba(217,119,87,0.06); }
+  td .mono, td.num { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  td strong { font-weight: 600; color: var(--text); }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+  .badge.sp5 { background: rgba(217,119,87,0.15); color: var(--accent); border: 1px solid rgba(217,119,87,0.3); }
+  .badge.spx { background: rgba(143,160,179,0.12); color: var(--spx); border: 1px solid rgba(143,160,179,0.3); }
+
+  .chart-wrap {
+    position: relative;
+    height: 340px;
+  }
+  .chart-wrap.tall { height: 380px; }
+
+  .summary-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .loading {
+    color: var(--muted);
+    padding: 24px;
+    text-align: center;
+    font-style: italic;
+  }
+  .err {
+    color: var(--neg);
+    padding: 12px;
+    font-size: 12px;
+  }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(217,119,87,0.4); }
+  a:hover { border-bottom-color: var(--accent); }
+
+  @media (max-width: 900px) {
+    main { padding: 20px; }
+    header { padding: 14px 20px; }
+    .grid-cards, .summary-bar { grid-template-columns: repeat(2, 1fr); }
+    header h1 { font-size: 18px; }
+    .mascot { width: 90px !important; bottom: 12px !important; right: 12px !important; }
+  }
+
+  .mascot {
+    position: fixed;
+    bottom: 22px;
+    right: 22px;
+    width: 130px;
+    height: auto;
+    z-index: 50;
+    cursor: pointer;
+    filter: drop-shadow(0 6px 18px rgba(0,0,0,0.35));
+    transition: transform 0.2s ease;
+    user-select: none;
+  }
+  .mascot:hover { transform: rotate(-4deg) scale(1.05); }
+  .mascot:active { transform: rotate(2deg) scale(0.97); }
+  @keyframes wow-bounce {
+    0%, 100% { transform: rotate(0) scale(1); }
+    20% { transform: rotate(-8deg) scale(1.1); }
+    40% { transform: rotate(6deg) scale(1.08); }
+    60% { transform: rotate(-3deg) scale(1.04); }
+    80% { transform: rotate(2deg) scale(1.02); }
+  }
+  .mascot.bounce { animation: wow-bounce 0.7s ease; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/" class="brand" style="display:flex;align-items:center;text-decoration:none;border:none">
+    <img src="/assets/sp5-logo.svg" alt="S&amp;P Five" style="height:44px;width:auto;display:block" />
+  </a>
+  <nav class="tabs">
+    <button id="tab-live" class="active">Live</button>
+    <button id="tab-back">Backtest</button>
+  </nav>
+  <div class="controls">
+    <span class="status" id="status">idle</span>
+    <button class="btn" id="refresh-btn">Refresh</button>
+  </div>
+</header>
+
+<main>
+  <div id="apikey-banner" style="display:none;background:rgba(217,119,87,0.08);border:1px solid rgba(217,119,87,0.3);color:#E8A38A;padding:14px 18px;border-radius:12px;margin-bottom:20px;font-size:13px;line-height:1.55">
+    <strong style="color:#F4B999">Stooq historical data gated by apikey.</strong>
+    Live prices work. Pre-2016 backtest needs Stooq API key.
+    Get key at <a href="https://stooq.com/q/d/?s=aapl.us&get_apikey" target="_blank">stooq apikey page</a>,
+    then restart with <code style="background:rgba(0,0,0,0.3);padding:1px 8px;border-radius:4px;font-size:12px">STOOQ_APIKEY=xxx node server.js</code>.
+  </div>
+  <!-- LIVE PAGE -->
+  <section id="page-live" class="page active">
+    <div class="grid-cards">
+      <div class="card">
+        <div class="label">PORTFOLIO VALUE</div>
+        <div class="val" id="m-portfolio">—</div>
+        <div class="sub">start $1,000,000</div>
+      </div>
+      <div class="card">
+        <div class="label">S&amp;P FIVE YTD</div>
+        <div class="val" id="m-sp5">—</div>
+        <div class="sub">equal-weight 5 names</div>
+      </div>
+      <div class="card">
+        <div class="label">S&amp;P 500 YTD</div>
+        <div class="val" id="m-spx">—</div>
+        <div class="sub">SPY benchmark</div>
+      </div>
+      <div class="card">
+        <div class="label">ALPHA vs S&amp;P 500</div>
+        <div class="val" id="m-alpha">—</div>
+        <div class="sub">SP5 − SPY</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Holdings <span style="color:var(--muted);font-weight:400;font-style:italic">· 2026</span></h2>
+      <table id="holdings-table">
+        <thead>
+          <tr>
+            <th>Ticker</th><th>Company</th>
+            <th>Entry</th><th>Current</th>
+            <th>YTD %</th><th>Shares</th><th>Value</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="7" class="loading">loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Year-to-Date Return</h2>
+      <div class="chart-wrap"><canvas id="chart-ytd"></canvas></div>
+    </div>
+  </section>
+
+  <!-- BACKTEST PAGE -->
+  <section id="page-back" class="page">
+    <div class="summary-bar">
+      <div class="card">
+        <div class="label">Win Rate (SP5 &gt; SPY)</div>
+        <div class="val" id="b-winrate">—</div>
+        <div class="sub" id="b-winrate-sub">—</div>
+      </div>
+      <div class="card">
+        <div class="label">SP5 Final</div>
+        <div class="val" id="b-sp5-final">—</div>
+        <div class="sub" id="b-sp5-sub">compounded from $1M</div>
+      </div>
+      <div class="card">
+        <div class="label">SPY Final</div>
+        <div class="val" id="b-spx-final">—</div>
+        <div class="sub" id="b-spx-sub">compounded from $1M</div>
+      </div>
+      <div class="card">
+        <div class="label">TOTAL ALPHA</div>
+        <div class="val" id="b-alpha">—</div>
+        <div class="sub">SP5 − SPY cumulative</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Annual Backtest</h2>
+      <table id="back-table">
+        <thead>
+          <tr>
+            <th>Year</th><th>Period</th><th>Top 5</th>
+            <th>SP5 %</th><th>SPY %</th><th>Diff</th><th>Winner</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="7" class="loading">loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Cumulative Growth <span style="color:var(--muted);font-weight:400;font-style:italic">· $1M since 2000</span></h2>
+      <div class="chart-wrap tall"><canvas id="chart-growth"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <h2>Annual Returns</h2>
+      <div class="chart-wrap tall"><canvas id="chart-annual"></canvas></div>
+    </div>
+  </section>
+</main>
+
+<img src="/assets/dog.png" alt="WOW" class="mascot" id="mascot" title="wow" onclick="this.classList.remove('bounce');void this.offsetWidth;this.classList.add('bounce')">
+
+<script>
+// ============ CONFIG ============
+const COMPANY = {
+  AAPL: "Apple", MSFT: "Microsoft", NVDA: "NVIDIA", AMZN: "Amazon",
+  GOOG: "Alphabet", "GOOGL": "Alphabet A", META: "Meta", FB: "Meta (FB)",
+  TSLA: "Tesla", "BRK-B": "Berkshire B", XOM: "ExxonMobil", GE: "Gen. Electric",
+  CSCO: "Cisco", WMT: "Walmart", C: "Citigroup", PFE: "Pfizer",
+  BAC: "Bank of America", BP: "BP", T: "AT&T", PG: "Procter & Gamble",
+  JNJ: "Johnson & Johnson", SPY: "SPDR S&P 500"
+};
+
+const LIVE_YEAR = 2026;
+const LIVE_TICKERS = ["AAPL","MSFT","NVDA","AMZN","GOOG"];
+// Entry prices are loaded at runtime from /api/annual (cached on server).
+let LIVE_ENTRY = {};
+let SPY_ENTRY_2026 = null;
+let ENTRY_DATE_2026 = "2026-01-02";
+const POSITION_USD = 200000;
+const TOTAL_USD = 1000000;
+
+const TOP5_BY_YEAR = {
+  2000: ["MSFT","GE","CSCO","XOM","WMT"],
+  2001: ["MSFT","GE","XOM","WMT","C"],
+  2002: ["GE","MSFT","XOM","WMT","C"],
+  2003: ["GE","MSFT","XOM","WMT","PFE"],
+  2004: ["GE","MSFT","XOM","WMT","C"],
+  2005: ["GE","XOM","MSFT","C","BAC"],
+  2006: ["XOM","GE","MSFT","C","BP"],
+  2007: ["XOM","GE","MSFT","T","BAC"],
+  2008: ["XOM","GE","MSFT","PG","T"],
+  2009: ["XOM","MSFT","WMT","JNJ","PG"],
+  2010: ["XOM","MSFT","AAPL","WMT","BRK-B"],
+  2011: ["AAPL","XOM","MSFT","GOOG","BRK-B"],
+  2012: ["AAPL","XOM","MSFT","GOOG","BRK-B"],
+  2013: ["AAPL","XOM","GOOG","MSFT","BRK-B"],
+  2014: ["AAPL","XOM","MSFT","GOOG","BRK-B"],
+  2015: ["AAPL","GOOG","MSFT","XOM","BRK-B"],
+  2016: ["AAPL","GOOG","MSFT","BRK-B","XOM"],
+  2017: ["AAPL","GOOG","MSFT","AMZN","BRK-B"],
+  2018: ["AAPL","GOOG","MSFT","AMZN","BRK-B"],
+  2019: ["MSFT","AAPL","AMZN","GOOG","BRK-B"],
+  2020: ["MSFT","AAPL","AMZN","GOOG","FB"],
+  2021: ["AAPL","MSFT","AMZN","GOOG","TSLA"],
+  2022: ["AAPL","MSFT","AMZN","GOOG","TSLA"],
+  2023: ["AAPL","MSFT","AMZN","NVDA","GOOG"],
+  2024: ["MSFT","AAPL","NVDA","AMZN","GOOG"],
+  2025: ["NVDA","AAPL","MSFT","AMZN","GOOG"]
+};
+
+// Stooq ticker normalization
+function stooqTicker(t) {
+  // Stooq uses dot for class shares: brk-b → brk-b.us works; brk.b.us is alt.
+  // node-fetch upstream Stooq accepts "brk-b.us" and "brk.b.us" — prefer dash.
+  return t.toLowerCase();
+}
+
+// ============ STATE ============
+let ytdChart = null;
+let growthChart = null;
+let annualChart = null;
+let liveTimer = null;
+
+// ============ UTILS ============
+const fmtMoney = (v) => v == null || isNaN(v) ? "—" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const fmtMoney2 = (v) => v == null || isNaN(v) ? "—" : "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = (v, digits = 2) => v == null || isNaN(v) ? "—" : (v >= 0 ? "+" : "") + v.toFixed(digits) + "%";
+const fmtShares = (v) => v == null || isNaN(v) ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const cls = (v) => v == null || isNaN(v) ? "" : (v >= 0 ? "pos" : "neg");
+
+function parseCsv(text) {
+  if (!text) return [];
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(",");
+    if (parts.length < 5) continue;
+    const d = parts[0];
+    const close = parseFloat(parts[4]);
+    if (isNaN(close)) continue;
+    rows.push({ date: d, close });
+  }
+  return rows;
+}
+
+function ymd(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+}
+
+function toDate(s) {
+  // "2026-04-24" → Date
+  return new Date(s + "T00:00:00Z");
+}
+
+async function stooqFetch(ticker, from, to) {
+  const t = stooqTicker(ticker);
+  let url = `/api/stooq?ticker=${encodeURIComponent(t)}`;
+  if (from) url += `&from=${from}`;
+  if (to) url += `&to=${to}`;
+  const r = await fetch(url);
+  const text = await r.text();
+  return parseCsv(text);
+}
+
+async function latestClose(ticker) {
+  // Proxy's no-date path hits Stooq's /q/l/ snapshot endpoint (no apikey).
+  const rows = await stooqFetch(ticker);
+  if (rows.length) return rows[rows.length - 1];
+  return null;
+}
+
+async function priceOnOrAfter(ticker, dateStr) {
+  const from = dateStr.replace(/-/g, "");
+  const end = new Date(toDate(dateStr).getTime() + 10 * 86400000);
+  const to = ymd(end);
+  const rows = await stooqFetch(ticker, from, to);
+  return rows[0] || null;
+}
+
+async function priceOnOrBefore(ticker, dateStr) {
+  const to = dateStr.replace(/-/g, "");
+  const start = new Date(toDate(dateStr).getTime() - 14 * 86400000);
+  const from = ymd(start);
+  const rows = await stooqFetch(ticker, from, to);
+  return rows.length ? rows[rows.length - 1] : null;
+}
+
+async function historicalRange(ticker, fromStr, toStr) {
+  return stooqFetch(ticker, fromStr.replace(/-/g, ""), toStr.replace(/-/g, ""));
+}
+
+function setStatus(msg) {
+  document.getElementById("status").textContent = msg;
+}
+
+async function loadEntries(year, tickers) {
+  const q = new URLSearchParams({ year, tickers: tickers.join(",") });
+  const r = await fetch(`/api/annual?${q}`);
+  return r.json();
+}
+
+// ============ LIVE PAGE ============
+async function renderLive() {
+  setStatus("fetching live…");
+  const tbody = document.querySelector("#holdings-table tbody");
+  tbody.innerHTML = `<tr><td colspan="7" class="loading">loading live prices…</td></tr>`;
+
+  // Load entry prices once for 2026
+  if (!SPY_ENTRY_2026 || !LIVE_ENTRY[LIVE_TICKERS[0]]) {
+    try {
+      const data = await loadEntries(LIVE_YEAR, [...LIVE_TICKERS, "SPY"]);
+      LIVE_TICKERS.forEach(t => { if (data.entry[t] != null) LIVE_ENTRY[t] = data.entry[t]; });
+      if (data.entry.SPY != null) SPY_ENTRY_2026 = data.entry.SPY;
+      if (data.entryDate) ENTRY_DATE_2026 = data.entryDate;
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7" class="err">entry load err: ${e.message}</td></tr>`;
+      setStatus("err");
+      return;
+    }
+  }
+
+  let currentPrices = {};
+  try {
+    const results = await Promise.all(LIVE_TICKERS.map(t => latestClose(t)));
+    LIVE_TICKERS.forEach((t, i) => { currentPrices[t] = results[i] ? results[i].close : null; });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="err">fetch err: ${e.message}</td></tr>`;
+    setStatus("err");
+    return;
+  }
+
+  let spyNow = null;
+  try {
+    const spyRow = await latestClose("SPY");
+    if (spyRow) spyNow = spyRow.close;
+  } catch (_) {}
+
+  // Holdings table
+  let portfolioValue = 0;
+  let sp5RetSum = 0, sp5Count = 0;
+  tbody.innerHTML = "";
+  LIVE_TICKERS.forEach(t => {
+    const entry = LIVE_ENTRY[t];
+    const curr = currentPrices[t];
+    const shares = POSITION_USD / entry;
+    const val = curr != null ? shares * curr : null;
+    const ret = curr != null ? ((curr - entry) / entry) * 100 : null;
+    if (val != null) portfolioValue += val;
+    if (ret != null) { sp5RetSum += ret; sp5Count++; }
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${t}</strong></td>
+      <td>${COMPANY[t] || ""}</td>
+      <td>${fmtMoney2(entry)}</td>
+      <td>${fmtMoney2(curr)}</td>
+      <td class="${cls(ret)}">${fmtPct(ret)}</td>
+      <td>${fmtShares(shares)}</td>
+      <td>${fmtMoney(val)}</td>`;
+    tbody.appendChild(tr);
+  });
+  const sp5Ret = sp5Count ? sp5RetSum / sp5Count : null;
+  const spyRet = spyNow != null ? ((spyNow - SPY_ENTRY_2026) / SPY_ENTRY_2026) * 100 : null;
+  const alpha = sp5Ret != null && spyRet != null ? sp5Ret - spyRet : null;
+
+  const elPort = document.getElementById("m-portfolio");
+  const elSp5 = document.getElementById("m-sp5");
+  const elSpx = document.getElementById("m-spx");
+  const elAlpha = document.getElementById("m-alpha");
+  elPort.textContent = fmtMoney(portfolioValue);
+  elPort.className = "val " + cls(portfolioValue - TOTAL_USD);
+  elSp5.textContent = fmtPct(sp5Ret);
+  elSp5.className = "val " + cls(sp5Ret);
+  elSpx.textContent = fmtPct(spyRet);
+  elSpx.className = "val " + cls(spyRet);
+  elAlpha.textContent = fmtPct(alpha);
+  elAlpha.className = "val " + cls(alpha);
+
+  setStatus("loading chart…");
+  await renderYtdChart();
+  setStatus("updated " + new Date().toLocaleTimeString());
+}
+
+async function renderYtdChart() {
+  // Intraday-style: request per-ticker historical series via /api/history.
+  // Server uses cache + /q/l/ snapshot for today. With no apikey, falls back to 2-point line.
+  const today = new Date();
+  const labels = [ENTRY_DATE_2026, today.toISOString().slice(0, 10)];
+  const sp5Series = [0, null];
+  const spySeries = [0, null];
+
+  try {
+    const r = await fetch(`/api/history?year=${LIVE_YEAR}&tickers=${[...LIVE_TICKERS, "SPY"].join(",")}`);
+    const js = await r.json();
+    if (js.points && js.points.length > 1) {
+      labels.length = 0;
+      sp5Series.length = 0;
+      spySeries.length = 0;
+      for (const p of js.points) {
+        labels.push(p.date);
+        // SP5 equal-weight return vs cached entry
+        let sum = 0, n = 0;
+        for (const t of LIVE_TICKERS) {
+          const e = LIVE_ENTRY[t];
+          const c = p.closes?.[t];
+          if (e && c) { sum += ((c - e) / e) * 100; n++; }
+        }
+        sp5Series.push(n === LIVE_TICKERS.length ? sum / n : null);
+        const sc = p.closes?.SPY;
+        spySeries.push(sc && SPY_ENTRY_2026 ? ((sc - SPY_ENTRY_2026) / SPY_ENTRY_2026) * 100 : null);
+      }
+    } else {
+      // 2-point fallback: entry = 0%, today = live metric values
+      const sp5Now = document.getElementById("m-sp5").textContent;
+      const spyNow = document.getElementById("m-spx").textContent;
+      sp5Series[1] = parseFloat(sp5Now.replace(/[+%]/g, "")) || null;
+      spySeries[1] = parseFloat(spyNow.replace(/[+%]/g, "")) || null;
+    }
+  } catch (e) {
+    const sp5Now = document.getElementById("m-sp5").textContent;
+    const spyNow = document.getElementById("m-spx").textContent;
+    sp5Series[1] = parseFloat(sp5Now.replace(/[+%]/g, "")) || null;
+    spySeries[1] = parseFloat(spyNow.replace(/[+%]/g, "")) || null;
+  }
+
+  const ctx = document.getElementById("chart-ytd").getContext("2d");
+  if (ytdChart) ytdChart.destroy();
+  ytdChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "S&P Five",
+          data: sp5Series,
+          borderColor: "#D97757",
+          backgroundColor: "rgba(217,119,87,0.16)",
+          tension: 0.3,
+          fill: true,
+          pointRadius: 3,
+          borderWidth: 2
+        },
+        {
+          label: "S&P 500 (SPY)",
+          data: spySeries,
+          borderColor: "#8FA0B3",
+          backgroundColor: "rgba(143,160,179,0.10)",
+          tension: 0.3,
+          fill: false,
+          pointRadius: 3,
+          borderWidth: 2
+        }
+      ]
+    },
+    options: chartOpts("%", false)
+  });
+}
+
+function chartOpts(unit, isMoney) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: {
+        labels: {
+          color: "#C8C5BD",
+          font: { family: "Inter, system-ui, sans-serif", size: 12, weight: "500" },
+          usePointStyle: true,
+          pointStyle: "circle",
+          padding: 16
+        }
+      },
+      tooltip: {
+        backgroundColor: "#34322E",
+        borderColor: "#4A4844",
+        borderWidth: 1,
+        titleColor: "#E8E6E1",
+        bodyColor: "#C8C5BD",
+        titleFont: { family: "Inter, system-ui, sans-serif", size: 12, weight: "600" },
+        bodyFont: { family: "JetBrains Mono, ui-monospace, monospace", size: 12 },
+        padding: 10,
+        cornerRadius: 8,
+        displayColors: true,
+        boxPadding: 4,
+        callbacks: {
+          label: (c) => {
+            const v = c.parsed.y;
+            if (v == null) return "  " + c.dataset.label + ": —";
+            if (isMoney) return "  " + c.dataset.label + ": $" + v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+            return "  " + c.dataset.label + ": " + (v >= 0 ? "+" : "") + v.toFixed(2) + unit;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: "#908A82", font: { family: "JetBrains Mono, ui-monospace, monospace", size: 11 } },
+        grid: { color: "rgba(255,255,255,0.04)", drawTicks: false },
+        border: { color: "#3A3835" }
+      },
+      y: {
+        ticks: {
+          color: "#908A82",
+          font: { family: "JetBrains Mono, ui-monospace, monospace", size: 11 },
+          callback: (v) => isMoney ? "$" + Number(v).toLocaleString("en-US") : v + unit
+        },
+        grid: { color: "rgba(255,255,255,0.05)", drawTicks: false },
+        border: { color: "#3A3835" }
+      }
+    }
+  };
+}
+
+// ============ BACKTEST PAGE ============
+async function firstTradingDayClose(ticker, year) {
+  // Find first close on/after Jan 1
+  return priceOnOrAfter(ticker, `${year}-01-02`);
+}
+async function lastTradingDayClose(ticker, year) {
+  return priceOnOrBefore(ticker, `${year}-12-31`);
+}
+
+async function runBacktest() {
+  setStatus("running backtest…");
+  const years = Object.keys(TOP5_BY_YEAR).map(Number).sort((a,b)=>a-b);
+  const tbody = document.querySelector("#back-table tbody");
+  tbody.innerHTML = `<tr><td colspan="7" class="loading">loading cached annual data…</td></tr>`;
+
+  // Pull cached entry/exit per year from server (one call per year).
+  const perYear = {};
+  for (const y of years) {
+    const tickers = [...TOP5_BY_YEAR[y], "SPY"];
+    try {
+      perYear[y] = await loadEntries(y, tickers);
+    } catch (_) {
+      perYear[y] = { entry: {}, exit: {}, missing: tickers };
+    }
+  }
+
+  const results = [];
+  for (const y of years) {
+    const d = perYear[y] || {};
+    const tickers = TOP5_BY_YEAR[y];
+    // Drop partial years where the entry date isn't in January.
+    const entryMonth = d.entryDate ? d.entryDate.slice(5, 7) : null;
+    const isPartial = entryMonth && entryMonth !== "01";
+    const rets = [];
+    for (const t of tickers) {
+      const e = d.entry?.[t];
+      const x = d.exit?.[t];
+      if (e != null && x != null && e > 0) rets.push(((x - e) / e) * 100);
+    }
+    const full = !isPartial && rets.length === tickers.length;
+    const sp5 = full ? rets.reduce((a,b)=>a+b,0) / rets.length : null;
+    const spyE = d.entry?.SPY;
+    const spyX = d.exit?.SPY;
+    const spy = (!isPartial && spyE != null && spyX != null) ? ((spyX - spyE) / spyE) * 100 : null;
+    results.push({
+      year: y, tickers, sp5, spy,
+      entryDate: d.entryDate || `${y}-01-02`,
+      exitDate: d.exitDate || `${y}-12-31`,
+      partial: isPartial
+    });
+  }
+
+  // Render table — skip years with no data
+  tbody.innerHTML = "";
+  let wins = 0, counted = 0;
+  const renderable = results.filter(r => r.sp5 != null && r.spy != null);
+  for (const r of renderable) {
+    const diff = r.sp5 - r.spy;
+    counted++;
+    if (diff > 0) wins++;
+    const winner = diff > 0
+      ? `<span class="badge sp5">SP5</span>`
+      : `<span class="badge spx">SPY</span>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${r.year}</strong></td>
+      <td>${r.entryDate} → ${r.exitDate}</td>
+      <td>${r.tickers.join(", ")}</td>
+      <td class="${cls(r.sp5)}">${fmtPct(r.sp5)}</td>
+      <td class="${cls(r.spy)}">${fmtPct(r.spy)}</td>
+      <td class="${cls(diff)}">${fmtPct(diff)}</td>
+      <td>${winner}</td>`;
+    tbody.appendChild(tr);
+  }
+  if (!renderable.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="loading">no backtest data — provide Stooq apikey</td></tr>`;
+  }
+
+  // Compound $1M — only across years with data
+  let sp5Val = TOTAL_USD, spyVal = TOTAL_USD;
+  const startYear = renderable.length ? renderable[0].year : 2000;
+  const growthLabels = [`Start (${startYear})`];
+  const sp5Series = [sp5Val];
+  const spySeries = [spyVal];
+  const annualLabels = [];
+  const annualSp5 = [];
+  const annualSpy = [];
+  for (const r of renderable) {
+    sp5Val = sp5Val * (1 + r.sp5 / 100);
+    spyVal = spyVal * (1 + r.spy / 100);
+    growthLabels.push(String(r.year));
+    sp5Series.push(sp5Val);
+    spySeries.push(spyVal);
+    annualLabels.push(String(r.year));
+    annualSp5.push(r.sp5);
+    annualSpy.push(r.spy);
+  }
+
+  const lastYear = renderable.length ? renderable[renderable.length - 1].year : null;
+  const rangeLabel = renderable.length ? `${startYear}–${lastYear}` : "—";
+  document.getElementById("b-winrate").textContent = counted ? `${wins}/${counted} (${(wins/counted*100).toFixed(1)}%)` : "—";
+  document.getElementById("b-winrate-sub").textContent = rangeLabel;
+  const subText = renderable.length ? `$1M from ${startYear}, compounded` : "no data";
+  document.getElementById("b-sp5-sub").textContent = subText;
+  document.getElementById("b-spx-sub").textContent = subText;
+  const sp5FinalEl = document.getElementById("b-sp5-final");
+  const spxFinalEl = document.getElementById("b-spx-final");
+  sp5FinalEl.textContent = fmtMoney(sp5Val);
+  sp5FinalEl.className = "val " + cls(sp5Val - TOTAL_USD);
+  spxFinalEl.textContent = fmtMoney(spyVal);
+  spxFinalEl.className = "val " + cls(spyVal - TOTAL_USD);
+  const alphaDollar = sp5Val - spyVal;
+  const alphaEl = document.getElementById("b-alpha");
+  alphaEl.textContent = (alphaDollar >= 0 ? "+" : "") + fmtMoney(Math.abs(alphaDollar)).replace("$", "$");
+  alphaEl.className = "val " + cls(alphaDollar);
+
+  // Growth chart
+  const gctx = document.getElementById("chart-growth").getContext("2d");
+  if (growthChart) growthChart.destroy();
+  growthChart = new Chart(gctx, {
+    type: "line",
+    data: {
+      labels: growthLabels,
+      datasets: [
+        {
+          label: "S&P Five",
+          data: sp5Series,
+          borderColor: "#D97757",
+          backgroundColor: "rgba(217,119,87,0.16)",
+          tension: 0.25,
+          fill: true,
+          pointRadius: 2,
+          borderWidth: 2
+        },
+        {
+          label: "S&P 500 (SPY)",
+          data: spySeries,
+          borderColor: "#8FA0B3",
+          backgroundColor: "rgba(143,160,179,0.10)",
+          tension: 0.25,
+          fill: false,
+          pointRadius: 2,
+          borderWidth: 2
+        }
+      ]
+    },
+    options: chartOpts("", true)
+  });
+
+  // Annual bars
+  const actx = document.getElementById("chart-annual").getContext("2d");
+  if (annualChart) annualChart.destroy();
+  annualChart = new Chart(actx, {
+    type: "bar",
+    data: {
+      labels: annualLabels,
+      datasets: [
+        {
+          label: "S&P Five",
+          data: annualSp5,
+          backgroundColor: "rgba(217,119,87,0.85)",
+          borderColor: "#D97757",
+          borderWidth: 0,
+          borderRadius: 4
+        },
+        {
+          label: "S&P 500 (SPY)",
+          data: annualSpy,
+          backgroundColor: "rgba(143,160,179,0.75)",
+          borderColor: "#8FA0B3",
+          borderWidth: 0,
+          borderRadius: 4
+        }
+      ]
+    },
+    options: chartOpts("%", false)
+  });
+
+  setStatus("backtest done " + new Date().toLocaleTimeString());
+}
+
+// ============ TABS / REFRESH ============
+function switchTab(name) {
+  const liveActive = name === "live";
+  document.getElementById("tab-live").classList.toggle("active", liveActive);
+  document.getElementById("tab-back").classList.toggle("active", !liveActive);
+  document.getElementById("page-live").classList.toggle("active", liveActive);
+  document.getElementById("page-back").classList.toggle("active", !liveActive);
+}
+
+document.getElementById("tab-live").addEventListener("click", () => {
+  switchTab("live");
+});
+document.getElementById("tab-back").addEventListener("click", async () => {
+  switchTab("back");
+  if (!growthChart) await runBacktest();
+});
+
+document.getElementById("refresh-btn").addEventListener("click", async () => {
+  const onLive = document.getElementById("page-live").classList.contains("active");
+  if (onLive) await renderLive();
+  else await runBacktest();
+});
+
+function startAutoRefresh() {
+  if (liveTimer) clearInterval(liveTimer);
+  liveTimer = setInterval(() => {
+    const onLive = document.getElementById("page-live").classList.contains("active");
+    if (onLive) renderLive();
+  }, 60000);
+}
+
+async function checkApikey() {
+  try {
+    const r = await fetch("/api/status");
+    const j = await r.json();
+    if (!j.hasApikey) document.getElementById("apikey-banner").style.display = "block";
+  } catch (_) {}
+}
+
+// Init
+(async () => {
+  try {
+    await checkApikey();
+    await renderLive();
+    startAutoRefresh();
+  } catch (e) {
+    setStatus("init err: " + e.message);
+  }
+})();
+</script>
+</body>
+</html>
