@@ -478,10 +478,14 @@
             <th data-i18n="col_holding">Holding</th>
             <th data-i18n="col_entry">Entry</th><th data-i18n="col_current">Current</th>
             <th data-i18n="col_ytd">YTD %</th>
+            <th title="Trailing 12-month P/E. Hand-updated daily.">P/E</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="4" class="loading">loading…</td></tr></tbody>
+        <tbody><tr><td colspan="5" class="loading">loading…</td></tr></tbody>
       </table>
+      <div style="margin-top:6px;color:var(--muted);font-size:11px">
+        P/E source: hand-updated snapshot · last updated <span id="pe-updated"></span>
+      </div>
     </div>
 
     <div class="panel">
@@ -569,6 +573,27 @@ const COMPANY_HK = {
   "1398.HK": "ICBC", "0941.HK": "China Mobile", "0883.HK": "CNOOC",
   "1810.HK": "Xiaomi", "1211.HK": "BYD", "9618.HK": "JD.com",
   "2800.HK": "Tracker Fund (HSI)"
+};
+
+// Trailing 12-month P/E ratios — hand-maintained, hard-coded snapshot.
+// Update this map manually once a day from your data source of choice
+// (Yahoo Finance, Bloomberg, etc.). Bump PE_UPDATED when you do.
+const PE_UPDATED = "2026-04-25";
+const PE_RATIOS = {
+  // US — current top 5 + benchmark (sourced via stockanalysis.com TTM)
+  AAPL: 34.4,
+  MSFT: 26.6,
+  NVDA: 42.5,
+  AMZN: 36.8,
+  GOOG: 31.4,
+  SPY: 25.0,            // SPDR S&P 500 ETF (S&P 500 trailing PE)
+  // HK — current top 5 + benchmark (TTM, approximate)
+  "0700.HK": 22.0,      // Tencent
+  "9988.HK": 15.0,      // Alibaba
+  "0005.HK": 9.0,       // HSBC
+  "1299.HK": 12.0,      // AIA
+  "3690.HK": 30.0,      // Meituan
+  "2800.HK": 10.5,      // Tracker Fund (HSI trailing PE)
 };
 
 let CUR_COUNTRY = localStorage.getItem("sp5_country") || "us";
@@ -769,7 +794,7 @@ async function refreshCurrentYear() {
 async function renderLive() {
   setStatus("fetching live…");
   const tbody = document.querySelector("#holdings-table tbody");
-  tbody.innerHTML = `<tr><td colspan="7" class="loading">loading live prices…</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="5" class="loading">loading live prices…</td></tr>`;
 
   // Load entry prices once for 2026
   if (!BENCH_ENTRY || !LIVE_ENTRY[liveTickers()[0]]) {
@@ -780,7 +805,7 @@ async function renderLive() {
       if (data.entry[benchKey] != null) BENCH_ENTRY = data.entry[benchKey];
       if (data.entryDate) ENTRY_DATE_2026 = data.entryDate;
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="7" class="err">entry load err: ${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="err">entry load err: ${e.message}</td></tr>`;
       setStatus("err");
       return;
     }
@@ -791,7 +816,7 @@ async function renderLive() {
     const results = await Promise.all(liveTickers().map(t => latestClose(t)));
     liveTickers().forEach((t, i) => { currentPrices[t] = results[i] ? results[i].close : null; });
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="4" class="err">fetch err: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="err">fetch err: ${e.message}</td></tr>`;
     setStatus("err");
     return;
   }
@@ -814,14 +839,18 @@ async function renderLive() {
     const ret = curr != null ? ((curr - entry) / entry) * 100 : null;
     if (val != null) portfolioValue += val;
     if (ret != null) { sp5RetSum += ret; sp5Count++; }
+    const pe = PE_RATIOS[t];
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><strong>${t}</strong> <span style="color:var(--muted);font-weight:400">· ${companyMap()[t] || ""}</span></td>
       <td>${fmtPrice(entry)}</td>
       <td>${fmtPrice(curr)}</td>
-      <td class="${cls(ret)}">${fmtPct(ret)}</td>`;
+      <td class="${cls(ret)}">${fmtPct(ret)}</td>
+      <td>${pe != null ? pe.toFixed(1) : "—"}</td>`;
     tbody.appendChild(tr);
   });
+  const peEl = document.getElementById("pe-updated");
+  if (peEl) peEl.textContent = PE_UPDATED;
   const sp5Ret = sp5Count ? sp5RetSum / sp5Count : null;
   const spyRet = spyNow != null ? ((spyNow - BENCH_ENTRY) / BENCH_ENTRY) * 100 : null;
   const alpha = sp5Ret != null && spyRet != null ? sp5Ret - spyRet : null;
