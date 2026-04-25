@@ -7,9 +7,17 @@ const app = express();
 const PORT = process.env.PORT || 4317;
 const CACHE_FILE = path.join(__dirname, 'prices-cache.json');
 
-// Disk cache: { "YYYY": { "entry": {TICKER: close}, "exit": {TICKER: close} } }
+// Disk cache: { country: { "YYYY": { entry:{TICKER:close}, exit:{...} } } }
+// Legacy shape (year keys at root) is auto-migrated to { us: {...} } on load.
 function loadCache() {
-  try { return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch (_) { return {}; }
+  try {
+    const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) || {};
+    const looksLegacy = Object.keys(raw).length && Object.keys(raw).every(k => /^\d{4}$/.test(k));
+    if (looksLegacy) return { us: raw, hk: {} };
+    if (!raw.us) raw.us = {};
+    if (!raw.hk) raw.hk = {};
+    return raw;
+  } catch (_) { return { us: {}, hk: {} }; }
 }
 function saveCache(c) {
   try { fs.writeFileSync(CACHE_FILE, JSON.stringify(c, null, 2)); } catch (e) { console.error('cache save err:', e.message); }
@@ -59,35 +67,24 @@ function parseCsvRows(text) {
 }
 
 // Fetch first trading close on/after Jan 2 and last trading close on/before Dec 31.
-// Try Stooq first (needs apikey); fall back to Nasdaq public API (covers ~2016+).
-// Cache per (year, ticker) on disk; hit upstream ≤1x per ticker per year.
-async function getYearEndpoints(year, ticker) {
+// US uses Nasdaq public API (~2016+), HK uses Yahoo Finance (HKEX has no free
+// public historical CSV). Cache per (country, year, ticker) on disk.
+async function getYearEndpoints(year, ticker, country = 'us') {
+  if (!priceCache[country]) priceCache[country] = {};
   const ykey = String(year);
-  if (!priceCache[ykey]) priceCache[ykey] = { entry: {}, exit: {} };
-  const slot = priceCache[ykey];
+  if (!priceCache[country][ykey]) priceCache[country][ykey] = { entry: {}, exit: {} };
+  const slot = priceCache[country][ykey];
   if (slot.entry[ticker] != null && slot.exit[ticker] != null) return slot;
 
-  if (STOOQ_APIKEY) {
-    const body = await stooqHistorical(ticker.toLowerCase(), `${year}0101`, `${year}1231`);
-    const rows = parseCsvRows(body);
-    if (rows.length) {
-      slot.entry[ticker] = rows[0].close;
-      slot.exit[ticker] = rows[rows.length - 1].close;
-      slot.entryDate = slot.entryDate || rows[0].date;
-      slot.exitDate = rows[rows.length - 1].date;
-      saveCache(priceCache);
-      return slot;
-    }
-  }
-
-  // Nasdaq fallback (no apikey; ~10-year window). Skip for very old years.
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = new Date().getUTCFullYear();
-  if (year < currentYear - 10) return slot; // Nasdaq won't have it
+  if (year < currentYear - 12) return slot;
+
+  const histFn = getCountryHistoryFn(country);
   try {
     const fromIso = `${year}-01-02`;
     const toIso = year >= currentYear ? today : `${year}-12-31`;
-    const rows = await nasdaqHistory(ticker, fromIso, toIso);
+    const rows = await histFn(ticker, fromIso, toIso);
     if (rows.length) {
       slot.entry[ticker] = Number(rows[0].close.toFixed(4));
       slot.exit[ticker] = Number(rows[rows.length - 1].close.toFixed(4));
@@ -99,79 +96,72 @@ async function getYearEndpoints(year, ticker) {
   return slot;
 }
 
-async function nasdaqLatestCsv(ticker) {
-  // Pull last ~10 days from Nasdaq, return single CSV row for the most-recent close.
+async function latestCsv(ticker, country = 'us') {
   const today = new Date().toISOString().slice(0, 10);
   const past = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+  const histFn = getCountryHistoryFn(country);
   try {
-    const rows = await nasdaqHistory(ticker.toUpperCase(), past, today);
+    const rows = await histFn(country === 'us' ? ticker.toUpperCase() : ticker, past, today);
     if (!rows.length) return null;
     const r = rows[rows.length - 1];
     return `Date,Open,High,Low,Close,Volume\n${r.date},${r.close},${r.close},${r.close},${r.close},0\n`;
   } catch (_) { return null; }
 }
 
+// Latest close. Endpoint name kept (`/api/stooq`) for backwards compatibility,
+// but the actual upstream is Nasdaq for US and Yahoo for HK — no Stooq.
 app.get('/api/stooq', async (req, res) => {
-  const { ticker, from, to, mode } = req.query;
+  const ticker = req.query.ticker;
+  const country = (req.query.country === 'hk') ? 'hk' : 'us';
   if (!ticker) return res.status(400).send('ticker required');
-  const t = String(ticker).toLowerCase();
-
+  const t = String(ticker);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=60');
-
   try {
-    // Latest snapshot path: Stooq → Nasdaq fallback (Stooq blocks some cloud IPs).
-    if (!from && !to && mode !== 'history') {
-      const csv = await stooqLatest(t);
-      if (csv) {
-        const lines = csv.trim().split(/\r?\n/);
-        if (lines.length >= 2) return res.send(csv);
-      }
-      const ndCsv = await nasdaqLatestCsv(t);
-      if (ndCsv) return res.send(ndCsv);
-      return res.send('Date,Open,High,Low,Close,Volume\n');
-    }
-    const body = await stooqHistorical(t, from, to);
-    // Detect the "Get your apikey" plain-text gate
-    if (body.startsWith('Get your apikey')) {
-      return res.status(200).send('Date,Open,High,Low,Close,Volume\n');
-    }
-    res.send(body);
+    const csv = await latestCsv(t, country);
+    if (csv) return res.send(csv);
+    res.send('Date,Open,High,Low,Close,Volume\n');
   } catch (e) {
     res.status(502).send('proxy error: ' + e.message);
   }
 });
 
 app.get('/api/status', (_req, res) => {
-  res.json({ hasApikey: Boolean(STOOQ_APIKEY), cacheYears: Object.keys(priceCache) });
+  res.json({
+    countries: ['us', 'hk'],
+    cacheYears: {
+      us: Object.keys(priceCache.us || {}).sort(),
+      hk: Object.keys(priceCache.hk || {}).sort()
+    }
+  });
 });
 
 // /api/annual?year=2025&tickers=AAPL,MSFT,...
 // Returns { year, entryDate, exitDate, entry:{...}, exit:{...}, missing:[...] }
 app.get('/api/annual', async (req, res) => {
   const year = parseInt(req.query.year, 10);
+  const country = (req.query.country === 'hk') ? 'hk' : 'us';
   const tickers = String(req.query.tickers || '').split(',').map(s => s.trim()).filter(Boolean);
   if (!year || !tickers.length) return res.status(400).json({ error: 'year + tickers required' });
 
   const missing = [];
   for (const t of tickers) {
     try {
-      const slot = await getYearEndpoints(year, t);
+      const slot = await getYearEndpoints(year, t, country);
       if (slot.entry[t] == null || slot.exit[t] == null) missing.push(t);
     } catch (e) { missing.push(t); }
   }
-  const slot = priceCache[String(year)] || { entry: {}, exit: {} };
+  const slot = (priceCache[country] || {})[String(year)] || { entry: {}, exit: {} };
   const entry = {}, exit = {};
   for (const t of tickers) {
     if (slot.entry[t] != null) entry[t] = slot.entry[t];
     if (slot.exit[t] != null) exit[t] = slot.exit[t];
   }
   res.json({
-    year,
+    year, country,
     entryDate: slot.entryDate || null,
     exitDate: slot.exitDate || null,
-    entry, exit, missing,
-    hasApikey: Boolean(STOOQ_APIKEY)
+    entry, exit, missing
   });
 });
 
@@ -195,14 +185,50 @@ async function nasdaqHistory(ticker, fromIso, toIso) {
   }).filter(r => !isNaN(r.close)).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// Yahoo Finance v8 chart (used for HK tickers). HKEX itself does not publish
+// a free historical CSV endpoint; Yahoo is the de-facto public source.
+async function yahooHistory(ticker, fromIso, toIso) {
+  const p1 = Math.floor(new Date(fromIso + 'T00:00:00Z').getTime() / 1000);
+  const p2 = Math.floor(new Date(toIso + 'T23:59:59Z').getTime() / 1000);
+  const sym = ticker.endsWith('.HK') ? ticker : ticker + '.HK';
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?period1=${p1}&period2=${p2}&interval=1d&events=history`;
+  let j;
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } });
+    j = await r.json();
+  } catch (e) {
+    console.error('yahoo fetch err', sym, e.message);
+    return [];
+  }
+  if (j?.chart?.error) {
+    console.error('yahoo err', sym, JSON.stringify(j.chart.error));
+    return [];
+  }
+  const result = j?.chart?.result?.[0];
+  if (!result) { console.error('yahoo no result', sym, JSON.stringify(j).slice(0, 200)); return []; }
+  const ts = result.timestamp || [];
+  const closes = result.indicators?.quote?.[0]?.close || [];
+  const out = [];
+  for (let i = 0; i < ts.length; i++) {
+    const c = closes[i];
+    if (c == null || isNaN(c)) continue;
+    const d = new Date(ts[i] * 1000).toISOString().slice(0, 10);
+    out.push({ date: d, close: Number(c) });
+  }
+  return out;
+}
+
+function getCountryHistoryFn(country) { return country === 'hk' ? yahooHistory : nasdaqHistory; }
+
 app.get('/api/history', async (req, res) => {
   const year = parseInt(req.query.year, 10);
+  const country = (req.query.country === 'hk') ? 'hk' : 'us';
   const tickers = String(req.query.tickers || '').split(',').map(s => s.trim()).filter(Boolean);
   if (!year || !tickers.length) return res.status(400).json({ error: 'year + tickers required' });
 
   const today = new Date().toISOString().slice(0, 10);
   const from = `${year}-01-02`;
-  const cacheKey = `${year}:${tickers.sort().join(',')}`;
+  const cacheKey = `${country}:${year}:${tickers.sort().join(',')}`;
   const cacheEntry = historyCache[cacheKey];
   const cacheAge = cacheEntry ? (Date.now() - cacheEntry.ts) : Infinity;
   const hoursStale = cacheAge / 3_600_000;
@@ -212,10 +238,11 @@ app.get('/api/history', async (req, res) => {
     return res.json(cacheEntry.payload);
   }
 
+  const histFn = getCountryHistoryFn(country);
   try {
     const series = {};
     for (const t of tickers) {
-      series[t] = await nasdaqHistory(t, from, today);
+      series[t] = await histFn(t, from, today);
       await new Promise(r => setTimeout(r, 200));
     }
     // Build union of dates and weekly-sample
@@ -245,7 +272,7 @@ app.get('/api/history', async (req, res) => {
       return { date: d, closes };
     });
 
-    const payload = { year, from, to: today, points };
+    const payload = { year, country, from, to: today, points };
     historyCache[cacheKey] = { ts: Date.now(), payload };
     saveHistoryCache();
     res.json(payload);
@@ -254,19 +281,21 @@ app.get('/api/history', async (req, res) => {
   }
 });
 
-// Manual cache override: POST /api/cache body { year, entry:{T:price}, exit:{T:price} }
+// Manual cache override: POST /api/cache body { year, country?, entry, exit }
 app.use(express.json());
 app.post('/api/cache', (req, res) => {
   const { year, entry, exit, entryDate, exitDate } = req.body || {};
+  const country = (req.body?.country === 'hk') ? 'hk' : 'us';
   if (!year) return res.status(400).json({ error: 'year required' });
+  if (!priceCache[country]) priceCache[country] = {};
   const ykey = String(year);
-  if (!priceCache[ykey]) priceCache[ykey] = { entry: {}, exit: {} };
-  if (entry) Object.assign(priceCache[ykey].entry, entry);
-  if (exit) Object.assign(priceCache[ykey].exit, exit);
-  if (entryDate) priceCache[ykey].entryDate = entryDate;
-  if (exitDate) priceCache[ykey].exitDate = exitDate;
+  if (!priceCache[country][ykey]) priceCache[country][ykey] = { entry: {}, exit: {} };
+  if (entry) Object.assign(priceCache[country][ykey].entry, entry);
+  if (exit) Object.assign(priceCache[country][ykey].exit, exit);
+  if (entryDate) priceCache[country][ykey].entryDate = entryDate;
+  if (exitDate) priceCache[country][ykey].exitDate = exitDate;
   saveCache(priceCache);
-  res.json({ ok: true, year: priceCache[ykey] });
+  res.json({ ok: true, country, year: priceCache[country][ykey] });
 });
 
 app.use(express.static(__dirname));

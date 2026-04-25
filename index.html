@@ -362,13 +362,17 @@
   <a href="/" class="brand" style="display:flex;align-items:center;text-decoration:none;border:none">
     <img src="/assets/sp5-logo.svg" alt="S&amp;P Five" style="height:44px;width:auto;display:block" />
   </a>
+  <div class="lang-toggle" id="country-toggle" style="margin:0">
+    <button data-country="us" class="active">🇺🇸 US</button>
+    <button data-country="hk">🇭🇰 HK</button>
+  </div>
   <nav class="tabs">
     <button id="tab-live" class="active" data-i18n="tab_live">Live</button>
     <button id="tab-back" data-i18n="tab_back">Backtest</button>
   </nav>
   <div class="controls">
     <span class="status" id="status">idle</span>
-    <span style="color:var(--muted);font-size:11px;font-style:italic" title="Price data sourced from Nasdaq public API" data-i18n="data_src">data: Nasdaq</span>
+    <span style="color:var(--muted);font-size:11px;font-style:italic" id="data-src-tag">data: Nasdaq</span>
     <div class="lang-toggle" id="lang-toggle">
       <button data-lang="en" class="active">EN</button>
       <button data-lang="th">ไทย</button>
@@ -419,13 +423,7 @@
     </div>
 
     <div class="panel">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-        <h2 id="ytd-title" data-i18n="h_ytd" style="margin:0">Year-to-Date Return</h2>
-        <div class="lang-toggle" id="ytd-mode" style="margin:0">
-          <button data-mode="pct" class="active" data-i18n="mode_pct">Return %</button>
-          <button data-mode="usd" data-i18n="mode_usd">Growth $</button>
-        </div>
-      </div>
+      <h2 id="ytd-title" data-i18n="h_ytd">Year-to-Date Return</h2>
       <div class="chart-wrap"><canvas id="chart-ytd"></canvas></div>
     </div>
 
@@ -489,7 +487,7 @@
 
 <script>
 // ============ CONFIG ============
-const COMPANY = {
+const COMPANY_US = {
   AAPL: "Apple", MSFT: "Microsoft", NVDA: "NVIDIA", AMZN: "Amazon",
   GOOG: "Alphabet", "GOOGL": "Alphabet A", META: "Meta", FB: "Meta (FB)",
   TSLA: "Tesla", "BRK-B": "Berkshire B", XOM: "ExxonMobil", GE: "Gen. Electric",
@@ -498,16 +496,26 @@ const COMPANY = {
   JNJ: "Johnson & Johnson", SPY: "SPDR S&P 500"
 };
 
+const COMPANY_HK = {
+  "0700.HK": "Tencent", "9988.HK": "Alibaba", "0005.HK": "HSBC",
+  "1299.HK": "AIA", "3690.HK": "Meituan", "0939.HK": "CCB",
+  "1398.HK": "ICBC", "0941.HK": "China Mobile", "0883.HK": "CNOOC",
+  "1810.HK": "Xiaomi", "1211.HK": "BYD", "9618.HK": "JD.com",
+  "2800.HK": "Tracker Fund (HSI)"
+};
+
+let CUR_COUNTRY = localStorage.getItem("sp5_country") || "us";
 const LIVE_YEAR = 2026;
-const LIVE_TICKERS = ["AAPL","MSFT","NVDA","AMZN","GOOG"];
-// Entry prices are loaded at runtime from /api/annual (cached on server).
-let LIVE_ENTRY = {};
-let SPY_ENTRY_2026 = null;
-let ENTRY_DATE_2026 = "2026-01-02";
 const POSITION_USD = 200000;
 const TOTAL_USD = 1000000;
 
-const TOP5_BY_YEAR = {
+// Entry prices are loaded at runtime from /api/annual (cached on server).
+let LIVE_ENTRY = {};
+let BENCH_ENTRY = null;
+let ENTRY_DATE_2026 = "2026-01-02";
+
+// US Top 5 mapping
+const TOP5_BY_YEAR_US = {
   2000: ["MSFT","GE","CSCO","XOM","WMT"],
   2001: ["MSFT","GE","XOM","WMT","C"],
   2002: ["GE","MSFT","XOM","WMT","C"],
@@ -533,14 +541,33 @@ const TOP5_BY_YEAR = {
   2022: ["AAPL","MSFT","AMZN","GOOG","TSLA"],
   2023: ["AAPL","MSFT","AMZN","NVDA","GOOG"],
   2024: ["MSFT","AAPL","NVDA","AMZN","GOOG"],
-  2025: ["NVDA","AAPL","MSFT","AMZN","GOOG"]
+  2025: ["NVDA","AAPL","MSFT","AMZN","GOOG"],
+  2026: ["AAPL","MSFT","NVDA","AMZN","GOOG"]
 };
 
-// Stooq ticker normalization
-function stooqTicker(t) {
-  // Stooq uses dot for class shares: brk-b → brk-b.us works; brk.b.us is alt.
-  // node-fetch upstream Stooq accepts "brk-b.us" and "brk.b.us" — prefer dash.
-  return t.toLowerCase();
+// HK Top 5 by market cap (approximate, for backtest demo)
+const TOP5_BY_YEAR_HK = {
+  2017: ["0700.HK","0005.HK","0939.HK","0941.HK","1299.HK"],
+  2018: ["0700.HK","0005.HK","0939.HK","1299.HK","0941.HK"],
+  2019: ["0700.HK","0005.HK","0939.HK","1299.HK","0941.HK"],
+  2020: ["0700.HK","9988.HK","0005.HK","1299.HK","0939.HK"],
+  2021: ["0700.HK","9988.HK","1299.HK","0005.HK","0939.HK"],
+  2022: ["0700.HK","9988.HK","1299.HK","3690.HK","0005.HK"],
+  2023: ["0700.HK","1299.HK","9988.HK","0005.HK","3690.HK"],
+  2024: ["0700.HK","9988.HK","1299.HK","3690.HK","0005.HK"],
+  2025: ["0700.HK","9988.HK","1299.HK","3690.HK","0005.HK"],
+  2026: ["0700.HK","9988.HK","1299.HK","3690.HK","0005.HK"]
+};
+
+// Country-aware getters
+function topByYear() { return CUR_COUNTRY === "hk" ? TOP5_BY_YEAR_HK : TOP5_BY_YEAR_US; }
+function liveTickers() { return topByYear()[LIVE_YEAR]; }
+function benchmarkTicker() { return CUR_COUNTRY === "hk" ? "2800.HK" : "SPY"; }
+function companyMap() { return CUR_COUNTRY === "hk" ? COMPANY_HK : COMPANY_US; }
+function currencySymbol() { return CUR_COUNTRY === "hk" ? "HK$" : "$"; }
+function fmtPrice(v) {
+  if (v == null || isNaN(v)) return "—";
+  return currencySymbol() + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ============ STATE ============
@@ -548,7 +575,6 @@ let ytdChart = null;
 let growthChart = null;
 let annualChart = null;
 let liveTimer = null;
-let ytdMode = localStorage.getItem("sp5_ytd_mode") || "pct"; // "pct" | "usd"
 
 // ============ UTILS ============
 const fmtMoney = (v) => v == null || isNaN(v) ? "—" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -586,8 +612,7 @@ function toDate(s) {
 }
 
 async function stooqFetch(ticker, from, to) {
-  const t = stooqTicker(ticker);
-  let url = `/api/stooq?ticker=${encodeURIComponent(t)}`;
+  let url = `/api/stooq?ticker=${encodeURIComponent(ticker)}&country=${CUR_COUNTRY}`;
   if (from) url += `&from=${from}`;
   if (to) url += `&to=${to}`;
   const r = await fetch(url);
@@ -627,7 +652,7 @@ function setStatus(msg) {
 }
 
 async function loadEntries(year, tickers) {
-  const q = new URLSearchParams({ year, tickers: tickers.join(",") });
+  const q = new URLSearchParams({ year, tickers: tickers.join(","), country: CUR_COUNTRY });
   const r = await fetch(`/api/annual?${q}`);
   return r.json();
 }
@@ -639,11 +664,12 @@ async function renderLive() {
   tbody.innerHTML = `<tr><td colspan="7" class="loading">loading live prices…</td></tr>`;
 
   // Load entry prices once for 2026
-  if (!SPY_ENTRY_2026 || !LIVE_ENTRY[LIVE_TICKERS[0]]) {
+  if (!BENCH_ENTRY || !LIVE_ENTRY[liveTickers()[0]]) {
     try {
-      const data = await loadEntries(LIVE_YEAR, [...LIVE_TICKERS, "SPY"]);
-      LIVE_TICKERS.forEach(t => { if (data.entry[t] != null) LIVE_ENTRY[t] = data.entry[t]; });
-      if (data.entry.SPY != null) SPY_ENTRY_2026 = data.entry.SPY;
+      const data = await loadEntries(LIVE_YEAR, [...liveTickers(), benchmarkTicker()]);
+      liveTickers().forEach(t => { if (data.entry[t] != null) LIVE_ENTRY[t] = data.entry[t]; });
+      const benchKey = benchmarkTicker();
+      if (data.entry[benchKey] != null) BENCH_ENTRY = data.entry[benchKey];
       if (data.entryDate) ENTRY_DATE_2026 = data.entryDate;
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="7" class="err">entry load err: ${e.message}</td></tr>`;
@@ -654,8 +680,8 @@ async function renderLive() {
 
   let currentPrices = {};
   try {
-    const results = await Promise.all(LIVE_TICKERS.map(t => latestClose(t)));
-    LIVE_TICKERS.forEach((t, i) => { currentPrices[t] = results[i] ? results[i].close : null; });
+    const results = await Promise.all(liveTickers().map(t => latestClose(t)));
+    liveTickers().forEach((t, i) => { currentPrices[t] = results[i] ? results[i].close : null; });
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="4" class="err">fetch err: ${e.message}</td></tr>`;
     setStatus("err");
@@ -664,7 +690,7 @@ async function renderLive() {
 
   let spyNow = null;
   try {
-    const spyRow = await latestClose("SPY");
+    const spyRow = await latestClose(benchmarkTicker());
     if (spyRow) spyNow = spyRow.close;
   } catch (_) {}
 
@@ -672,7 +698,7 @@ async function renderLive() {
   let portfolioValue = 0;
   let sp5RetSum = 0, sp5Count = 0;
   tbody.innerHTML = "";
-  LIVE_TICKERS.forEach(t => {
+  liveTickers().forEach(t => {
     const entry = LIVE_ENTRY[t];
     const curr = currentPrices[t];
     const shares = POSITION_USD / entry;
@@ -682,14 +708,14 @@ async function renderLive() {
     if (ret != null) { sp5RetSum += ret; sp5Count++; }
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><strong>${t}</strong> <span style="color:var(--muted);font-weight:400">· ${COMPANY[t] || ""}</span></td>
-      <td>${fmtMoney2(entry)}</td>
-      <td>${fmtMoney2(curr)}</td>
+      <td><strong>${t}</strong> <span style="color:var(--muted);font-weight:400">· ${companyMap()[t] || ""}</span></td>
+      <td>${fmtPrice(entry)}</td>
+      <td>${fmtPrice(curr)}</td>
       <td class="${cls(ret)}">${fmtPct(ret)}</td>`;
     tbody.appendChild(tr);
   });
   const sp5Ret = sp5Count ? sp5RetSum / sp5Count : null;
-  const spyRet = spyNow != null ? ((spyNow - SPY_ENTRY_2026) / SPY_ENTRY_2026) * 100 : null;
+  const spyRet = spyNow != null ? ((spyNow - BENCH_ENTRY) / BENCH_ENTRY) * 100 : null;
   const alpha = sp5Ret != null && spyRet != null ? sp5Ret - spyRet : null;
 
   const elSp5 = document.getElementById("m-sp5");
@@ -711,10 +737,10 @@ async function renderLive() {
 let liveCumChart = null;
 async function renderLiveCumulative() {
   // Cumulative % growth using cached annual backtest data (no $).
-  const years = Object.keys(TOP5_BY_YEAR).map(Number).sort((a,b)=>a-b);
+  const years = Object.keys(topByYear()).map(Number).sort((a,b)=>a-b);
   const perYear = {};
   for (const y of years) {
-    const tickers = [...TOP5_BY_YEAR[y], "SPY"];
+    const tickers = [...topByYear()[y], benchmarkTicker()];
     try {
       perYear[y] = await loadEntries(y, tickers);
     } catch (_) {
@@ -726,7 +752,7 @@ async function renderLiveCumulative() {
   let sp5Mult = 1, spyMult = 1;
   for (const y of years) {
     const d = perYear[y];
-    const tickers = TOP5_BY_YEAR[y];
+    const tickers = topByYear()[y];
     const entryMonth = d.entryDate ? d.entryDate.slice(5, 7) : null;
     if (entryMonth && entryMonth !== "01") continue; // skip partial
     const rets = [];
@@ -734,7 +760,8 @@ async function renderLiveCumulative() {
       const e = d.entry?.[t]; const x = d.exit?.[t];
       if (e != null && x != null && e > 0) rets.push((x - e) / e);
     }
-    const spyE = d.entry?.SPY; const spyX = d.exit?.SPY;
+    const benchT = benchmarkTicker();
+    const spyE = d.entry?.[benchT]; const spyX = d.exit?.[benchT];
     if (rets.length !== tickers.length || spyE == null || spyX == null) continue;
     const sp5Ret = rets.reduce((a,b)=>a+b, 0) / rets.length;
     const spyRet = (spyX - spyE) / spyE;
@@ -760,7 +787,7 @@ async function renderLiveCumulative() {
       labels,
       datasets: [
         {
-          label: I18N[CUR_LANG].chart_sp5,
+          label: chartLabel("chart_sp5"),
           data: sp5Series,
           borderColor: "#D97757",
           backgroundColor: "rgba(217,119,87,0.16)",
@@ -770,7 +797,7 @@ async function renderLiveCumulative() {
           borderWidth: 2
         },
         {
-          label: I18N[CUR_LANG].chart_spx,
+          label: chartLabel("chart_spx"),
           data: spySeries,
           borderColor: "#8FA0B3",
           backgroundColor: "rgba(143,160,179,0.10)",
@@ -794,7 +821,7 @@ async function renderYtdChart() {
   const spySeries = [0, null];
 
   try {
-    const r = await fetch(`/api/history?year=${LIVE_YEAR}&tickers=${[...LIVE_TICKERS, "SPY"].join(",")}`);
+    const r = await fetch(`/api/history?year=${LIVE_YEAR}&tickers=${[...liveTickers(), benchmarkTicker()].join(",")}&country=${CUR_COUNTRY}`);
     const js = await r.json();
     if (js.points && js.points.length > 1) {
       labels.length = 0;
@@ -804,14 +831,14 @@ async function renderYtdChart() {
         labels.push(p.date);
         // SP5 equal-weight return vs cached entry
         let sum = 0, n = 0;
-        for (const t of LIVE_TICKERS) {
+        for (const t of liveTickers()) {
           const e = LIVE_ENTRY[t];
           const c = p.closes?.[t];
           if (e && c) { sum += ((c - e) / e) * 100; n++; }
         }
-        sp5Series.push(n === LIVE_TICKERS.length ? sum / n : null);
-        const sc = p.closes?.SPY;
-        spySeries.push(sc && SPY_ENTRY_2026 ? ((sc - SPY_ENTRY_2026) / SPY_ENTRY_2026) * 100 : null);
+        sp5Series.push(n === liveTickers().length ? sum / n : null);
+        const sc = p.closes?.[benchmarkTicker()];
+        spySeries.push(sc && BENCH_ENTRY ? ((sc - BENCH_ENTRY) / BENCH_ENTRY) * 100 : null);
       }
     } else {
       // 2-point fallback: entry = 0%, today = live metric values
@@ -827,11 +854,6 @@ async function renderYtdChart() {
     spySeries[1] = parseFloat(spyNow.replace(/[+%]/g, "")) || null;
   }
 
-  // Convert to dollar series if mode = "usd"
-  const isUsd = ytdMode === "usd";
-  const sp5Plot = isUsd ? sp5Series.map(v => v == null ? null : TOTAL_USD * (1 + v / 100)) : sp5Series;
-  const spyPlot = isUsd ? spySeries.map(v => v == null ? null : TOTAL_USD * (1 + v / 100)) : spySeries;
-
   const ctx = document.getElementById("chart-ytd").getContext("2d");
   if (ytdChart) ytdChart.destroy();
   ytdChart = new Chart(ctx, {
@@ -840,8 +862,8 @@ async function renderYtdChart() {
       labels,
       datasets: [
         {
-          label: I18N[CUR_LANG].chart_sp5,
-          data: sp5Plot,
+          label: chartLabel("chart_sp5"),
+          data: sp5Series,
           borderColor: "#D97757",
           backgroundColor: "rgba(217,119,87,0.16)",
           tension: 0.3,
@@ -850,8 +872,8 @@ async function renderYtdChart() {
           borderWidth: 2
         },
         {
-          label: I18N[CUR_LANG].chart_spx,
-          data: spyPlot,
+          label: chartLabel("chart_spx"),
+          data: spySeries,
           borderColor: "#8FA0B3",
           backgroundColor: "rgba(143,160,179,0.10)",
           tension: 0.3,
@@ -861,18 +883,9 @@ async function renderYtdChart() {
         }
       ]
     },
-    options: chartOpts(isUsd ? "" : "%", isUsd)
+    options: chartOpts("%", false)
   });
 }
-
-document.querySelectorAll("#ytd-mode button").forEach(b => {
-  b.addEventListener("click", () => {
-    ytdMode = b.dataset.mode;
-    localStorage.setItem("sp5_ytd_mode", ytdMode);
-    document.querySelectorAll("#ytd-mode button").forEach(x => x.classList.toggle("active", x.dataset.mode === ytdMode));
-    renderYtdChart().catch(() => {});
-  });
-});
 
 function chartOpts(unit, isMoney) {
   return {
@@ -941,14 +954,14 @@ async function lastTradingDayClose(ticker, year) {
 
 async function runBacktest() {
   setStatus("running backtest…");
-  const years = Object.keys(TOP5_BY_YEAR).map(Number).sort((a,b)=>a-b);
+  const years = Object.keys(topByYear()).map(Number).sort((a,b)=>a-b);
   const tbody = document.querySelector("#back-table tbody");
   tbody.innerHTML = `<tr><td colspan="7" class="loading">loading cached annual data…</td></tr>`;
 
   // Pull cached entry/exit per year from server (one call per year).
   const perYear = {};
   for (const y of years) {
-    const tickers = [...TOP5_BY_YEAR[y], "SPY"];
+    const tickers = [...topByYear()[y], benchmarkTicker()];
     try {
       perYear[y] = await loadEntries(y, tickers);
     } catch (_) {
@@ -959,7 +972,7 @@ async function runBacktest() {
   const results = [];
   for (const y of years) {
     const d = perYear[y] || {};
-    const tickers = TOP5_BY_YEAR[y];
+    const tickers = topByYear()[y];
     // Drop partial years where the entry date isn't in January.
     const entryMonth = d.entryDate ? d.entryDate.slice(5, 7) : null;
     const isPartial = entryMonth && entryMonth !== "01";
@@ -971,8 +984,9 @@ async function runBacktest() {
     }
     const full = !isPartial && rets.length === tickers.length;
     const sp5 = full ? rets.reduce((a,b)=>a+b,0) / rets.length : null;
-    const spyE = d.entry?.SPY;
-    const spyX = d.exit?.SPY;
+    const benchT = benchmarkTicker();
+    const spyE = d.entry?.[benchT];
+    const spyX = d.exit?.[benchT];
     const spy = (!isPartial && spyE != null && spyX != null) ? ((spyX - spyE) / spyE) * 100 : null;
     results.push({
       year: y, tickers, sp5, spy,
@@ -1037,13 +1051,15 @@ async function runBacktest() {
   document.getElementById("b-spx-sub").textContent = subText;
   const sp5FinalEl = document.getElementById("b-sp5-final");
   const spxFinalEl = document.getElementById("b-spx-final");
-  sp5FinalEl.textContent = fmtMoney(sp5Val);
+  const sym = currencySymbol();
+  const fmtBig = v => sym + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  sp5FinalEl.textContent = fmtBig(sp5Val);
   sp5FinalEl.className = "val " + cls(sp5Val - TOTAL_USD);
-  spxFinalEl.textContent = fmtMoney(spyVal);
+  spxFinalEl.textContent = fmtBig(spyVal);
   spxFinalEl.className = "val " + cls(spyVal - TOTAL_USD);
   const alphaDollar = sp5Val - spyVal;
   const alphaEl = document.getElementById("b-alpha");
-  alphaEl.textContent = (alphaDollar >= 0 ? "+" : "") + fmtMoney(Math.abs(alphaDollar)).replace("$", "$");
+  alphaEl.textContent = (alphaDollar >= 0 ? "+" : "") + fmtBig(Math.abs(alphaDollar));
   alphaEl.className = "val " + cls(alphaDollar);
 
   // Growth chart
@@ -1055,7 +1071,7 @@ async function runBacktest() {
       labels: growthLabels,
       datasets: [
         {
-          label: I18N[CUR_LANG].chart_sp5,
+          label: chartLabel("chart_sp5"),
           data: sp5Series,
           borderColor: "#D97757",
           backgroundColor: "rgba(217,119,87,0.16)",
@@ -1065,7 +1081,7 @@ async function runBacktest() {
           borderWidth: 2
         },
         {
-          label: I18N[CUR_LANG].chart_spx,
+          label: chartLabel("chart_spx"),
           data: spySeries,
           borderColor: "#8FA0B3",
           backgroundColor: "rgba(143,160,179,0.10)",
@@ -1088,7 +1104,7 @@ async function runBacktest() {
       labels: annualLabels,
       datasets: [
         {
-          label: I18N[CUR_LANG].chart_sp5,
+          label: chartLabel("chart_sp5"),
           data: annualSp5,
           backgroundColor: "rgba(217,119,87,0.85)",
           borderColor: "#D97757",
@@ -1096,7 +1112,7 @@ async function runBacktest() {
           borderRadius: 4
         },
         {
-          label: I18N[CUR_LANG].chart_spx,
+          label: chartLabel("chart_spx"),
           data: annualSpy,
           backgroundColor: "rgba(143,160,179,0.75)",
           borderColor: "#8FA0B3",
@@ -1195,6 +1211,35 @@ const I18N = {
 };
 let CUR_LANG = localStorage.getItem("sp5_lang") || "en";
 
+function chartLabel(key) {
+  let v = I18N[CUR_LANG][key] || "";
+  if (CUR_COUNTRY === "hk") {
+    if (key === "chart_sp5") v = v.replace(/S&P Five/i, "HK Five");
+    if (key === "chart_spx") v = "HSI · 2800.HK";
+  }
+  return v;
+}
+
+function applyCountryLabels() {
+  if (CUR_COUNTRY !== "hk") return;
+  const dict = I18N[CUR_LANG];
+  const overrides = {
+    lbl_sp5_ytd: (dict.lbl_sp5_ytd || "").replace(/S&P FIVE|S&P 5/i, "HK 5"),
+    lbl_spx_ytd: (dict.lbl_spx_ytd || "").replace(/S&P 500/g, "HSI"),
+    sub_spx: (dict.sub_spx || "").replace(/SPY/g, "2800.HK ETF"),
+    lbl_alpha: (dict.lbl_alpha || "").replace(/S&P 500/g, "HSI"),
+    sub_alpha: (dict.sub_alpha || "").replace(/SPY/g, "HSI"),
+    lbl_winrate: (dict.lbl_winrate || "").replace(/SPY/g, "HSI"),
+    lbl_spy_final: (dict.lbl_spy_final || "").replace(/SPY/g, "HSI"),
+    sub_total_alpha: (dict.sub_total_alpha || "").replace(/SPY/g, "HSI"),
+    col_spypct: (dict.col_spypct || "").replace(/SPY/g, "HSI")
+  };
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const k = el.getAttribute("data-i18n");
+    if (overrides[k] != null) el.innerHTML = overrides[k];
+  });
+}
+
 function applyLang(lang) {
   CUR_LANG = lang;
   localStorage.setItem("sp5_lang", lang);
@@ -1204,6 +1249,7 @@ function applyLang(lang) {
     const k = el.getAttribute("data-i18n");
     if (dict[k] != null) el.innerHTML = dict[k];
   });
+  applyCountryLabels();
   document.querySelectorAll("#lang-toggle button").forEach(b => {
     b.classList.toggle("active", b.dataset.lang === lang);
   });
@@ -1218,11 +1264,46 @@ document.querySelectorAll("#lang-toggle button").forEach(b => {
   b.addEventListener("click", () => applyLang(b.dataset.lang));
 });
 
+function applyCountry(c) {
+  if (c !== "us" && c !== "hk") c = "us";
+  CUR_COUNTRY = c;
+  localStorage.setItem("sp5_country", c);
+  document.querySelectorAll("#country-toggle button").forEach(b => {
+    b.classList.toggle("active", b.dataset.country === c);
+  });
+  // Reset cached entries so renderLive refetches
+  LIVE_ENTRY = {};
+  BENCH_ENTRY = null;
+  // Update data-source label
+  const tag = document.getElementById("data-src-tag");
+  if (tag) tag.textContent = c === "hk" ? "data: Yahoo Finance" : "data: Nasdaq";
+  // Re-apply language so country-specific overrides kick in
+  applyLang(CUR_LANG);
+  // Reset charts so they redraw cleanly
+  if (ytdChart) { ytdChart.destroy(); ytdChart = null; }
+  if (liveCumChart) { liveCumChart.destroy(); liveCumChart = null; }
+  if (growthChart) { growthChart.destroy(); growthChart = null; }
+  if (annualChart) { annualChart.destroy(); annualChart = null; }
+  // Re-render whichever page is active
+  renderLive().catch(() => {});
+  if (document.getElementById("page-back").classList.contains("active")) {
+    runBacktest().catch(() => {});
+  }
+}
+
+document.querySelectorAll("#country-toggle button").forEach(b => {
+  b.addEventListener("click", () => applyCountry(b.dataset.country));
+});
+
 // Init
 (async () => {
   try {
     applyLang(CUR_LANG);
-    document.querySelectorAll("#ytd-mode button").forEach(x => x.classList.toggle("active", x.dataset.mode === ytdMode));
+    document.querySelectorAll("#country-toggle button").forEach(b => {
+      b.classList.toggle("active", b.dataset.country === CUR_COUNTRY);
+    });
+    const tag = document.getElementById("data-src-tag");
+    if (tag) tag.textContent = CUR_COUNTRY === "hk" ? "data: Yahoo Finance" : "data: Nasdaq";
     await renderLive();
     startAutoRefresh();
   } catch (e) {
