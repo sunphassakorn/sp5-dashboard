@@ -419,7 +419,13 @@
     </div>
 
     <div class="panel">
-      <h2 data-i18n="h_ytd">Year-to-Date Return</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <h2 id="ytd-title" data-i18n="h_ytd" style="margin:0">Year-to-Date Return</h2>
+        <div class="lang-toggle" id="ytd-mode" style="margin:0">
+          <button data-mode="pct" class="active" data-i18n="mode_pct">Return %</button>
+          <button data-mode="usd" data-i18n="mode_usd">Growth $</button>
+        </div>
+      </div>
       <div class="chart-wrap"><canvas id="chart-ytd"></canvas></div>
     </div>
   </section>
@@ -537,6 +543,7 @@ let ytdChart = null;
 let growthChart = null;
 let annualChart = null;
 let liveTimer = null;
+let ytdMode = localStorage.getItem("sp5_ytd_mode") || "pct"; // "pct" | "usd"
 
 // ============ UTILS ============
 const fmtMoney = (v) => v == null || isNaN(v) ? "—" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -737,6 +744,11 @@ async function renderYtdChart() {
     spySeries[1] = parseFloat(spyNow.replace(/[+%]/g, "")) || null;
   }
 
+  // Convert to dollar series if mode = "usd"
+  const isUsd = ytdMode === "usd";
+  const sp5Plot = isUsd ? sp5Series.map(v => v == null ? null : TOTAL_USD * (1 + v / 100)) : sp5Series;
+  const spyPlot = isUsd ? spySeries.map(v => v == null ? null : TOTAL_USD * (1 + v / 100)) : spySeries;
+
   const ctx = document.getElementById("chart-ytd").getContext("2d");
   if (ytdChart) ytdChart.destroy();
   ytdChart = new Chart(ctx, {
@@ -746,7 +758,7 @@ async function renderYtdChart() {
       datasets: [
         {
           label: I18N[CUR_LANG].chart_sp5,
-          data: sp5Series,
+          data: sp5Plot,
           borderColor: "#D97757",
           backgroundColor: "rgba(217,119,87,0.16)",
           tension: 0.3,
@@ -756,7 +768,7 @@ async function renderYtdChart() {
         },
         {
           label: I18N[CUR_LANG].chart_spx,
-          data: spySeries,
+          data: spyPlot,
           borderColor: "#8FA0B3",
           backgroundColor: "rgba(143,160,179,0.10)",
           tension: 0.3,
@@ -766,9 +778,18 @@ async function renderYtdChart() {
         }
       ]
     },
-    options: chartOpts("%", false)
+    options: chartOpts(isUsd ? "" : "%", isUsd)
   });
 }
+
+document.querySelectorAll("#ytd-mode button").forEach(b => {
+  b.addEventListener("click", () => {
+    ytdMode = b.dataset.mode;
+    localStorage.setItem("sp5_ytd_mode", ytdMode);
+    document.querySelectorAll("#ytd-mode button").forEach(x => x.classList.toggle("active", x.dataset.mode === ytdMode));
+    renderYtdChart().catch(() => {});
+  });
+});
 
 function chartOpts(unit, isMoney) {
   return {
@@ -1060,7 +1081,8 @@ const I18N = {
     col_sp5pct: 'SP5 %', col_spypct: 'SPY %', col_diff: 'Diff', col_winner: 'Winner',
     h_growth: 'Cumulative Growth', h_growth_sub: '· $1M since 2000',
     h_annual_returns: 'Annual Returns',
-    chart_sp5: 'S&P Five', chart_spx: 'S&P 500 (SPY)'
+    chart_sp5: 'S&P Five', chart_spx: 'S&P 500 (SPY)',
+    mode_pct: 'Return %', mode_usd: 'Growth $'
   },
   th: {
     intro_title: 'กลยุทธ์ <em>S&P Five</em>',
@@ -1082,7 +1104,8 @@ const I18N = {
     col_sp5pct: 'SP5 %', col_spypct: 'SPY %', col_diff: 'ส่วนต่าง', col_winner: 'ผู้ชนะ',
     h_growth: 'การเติบโตสะสม', h_growth_sub: '· $1M ตั้งแต่ปี 2000',
     h_annual_returns: 'ผลตอบแทนรายปี',
-    chart_sp5: 'S&P Five', chart_spx: 'S&P 500 (SPY)'
+    chart_sp5: 'S&P Five', chart_spx: 'S&P 500 (SPY)',
+    mode_pct: 'ผลตอบแทน %', mode_usd: 'มูลค่า $'
   }
 };
 let CUR_LANG = localStorage.getItem("sp5_lang") || "en";
@@ -1114,6 +1137,7 @@ document.querySelectorAll("#lang-toggle button").forEach(b => {
 (async () => {
   try {
     applyLang(CUR_LANG);
+    document.querySelectorAll("#ytd-mode button").forEach(x => x.classList.toggle("active", x.dataset.mode === ytdMode));
     await renderLive();
     startAutoRefresh();
   } catch (e) {
