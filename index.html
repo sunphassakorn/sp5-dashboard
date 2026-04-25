@@ -316,6 +316,63 @@
     background: var(--card-2);
     color: var(--accent);
   }
+  /* Country toggle is more prominent than language toggle */
+  #country-toggle {
+    border: 1px solid var(--border-strong);
+    background: rgba(217,119,87,0.06);
+  }
+  #country-toggle button {
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  #country-toggle button.active {
+    background: var(--accent);
+    color: #FFFFFF;
+    box-shadow: 0 1px 4px rgba(217,119,87,0.4);
+  }
+  #country-toggle button.active span.flag { filter: none; }
+  #country-toggle button .flag { font-size: 16px; margin-right: 4px; filter: grayscale(0.6); transition: filter 0.15s; }
+
+  /* Market banner — strong visual indicator of currently-selected market */
+  .market-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    border-radius: 12px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .market-banner.us {
+    background: linear-gradient(90deg, rgba(59,130,246,0.10), rgba(59,130,246,0.02));
+    border: 1px solid rgba(59,130,246,0.3);
+    color: #93C5FD;
+  }
+  .market-banner.hk {
+    background: linear-gradient(90deg, rgba(217,119,87,0.12), rgba(217,119,87,0.03));
+    border: 1px solid rgba(217,119,87,0.4);
+    color: #F4B999;
+  }
+  .market-banner .flag-big {
+    font-size: 22px;
+    line-height: 1;
+  }
+  .market-banner .label-big {
+    font-family: "Fraunces", ui-serif, Georgia, serif;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .market-banner .meta {
+    color: var(--muted);
+    font-size: 12px;
+    margin-left: auto;
+    font-weight: 400;
+  }
 
   .intro {
     background: linear-gradient(135deg, rgba(217,119,87,0.06), rgba(217,119,87,0.02));
@@ -363,8 +420,8 @@
     <img src="/assets/sp5-logo.svg" alt="S&amp;P Five" style="height:44px;width:auto;display:block" />
   </a>
   <div class="lang-toggle" id="country-toggle" style="margin:0">
-    <button data-country="us" class="active">🇺🇸 US</button>
-    <button data-country="hk">🇭🇰 HK</button>
+    <button data-country="us" class="active"><span class="flag">🇺🇸</span>US</button>
+    <button data-country="hk"><span class="flag">🇭🇰</span>HK</button>
   </div>
   <nav class="tabs">
     <button id="tab-live" class="active" data-i18n="tab_live">Live</button>
@@ -382,6 +439,11 @@
 </header>
 
 <main>
+  <div class="market-banner us" id="market-banner">
+    <span class="flag-big" id="mb-flag">🇺🇸</span>
+    <span class="label-big" id="mb-label">United States Market</span>
+    <span class="meta" id="mb-meta">Top 5 by S&amp;P 500 market cap · benchmark: SPY</span>
+  </div>
   <div class="intro">
     <h2 data-i18n="intro_title">The <em>S&amp;P Five</em> Strategy</h2>
     <p data-i18n="intro_p1">Each year, on the first trading day of January, buy the five largest US companies by market capitalization in equal weight ($200,000 each, $1,000,000 total). Hold them all year. Sell on the last trading day of December and rebalance into the new top five.</p>
@@ -1215,7 +1277,7 @@ function chartLabel(key) {
   let v = I18N[CUR_LANG][key] || "";
   if (CUR_COUNTRY === "hk") {
     if (key === "chart_sp5") v = v.replace(/S&P Five/i, "HK Five");
-    if (key === "chart_spx") v = "HSI · 2800.HK";
+    if (key === "chart_spx") v = "HSI";
   }
   return v;
 }
@@ -1264,6 +1326,30 @@ document.querySelectorAll("#lang-toggle button").forEach(b => {
   b.addEventListener("click", () => applyLang(b.dataset.lang));
 });
 
+function updateMarketBanner() {
+  const banner = document.getElementById("market-banner");
+  const flag = document.getElementById("mb-flag");
+  const label = document.getElementById("mb-label");
+  const meta = document.getElementById("mb-meta");
+  if (!banner) return;
+  banner.classList.toggle("us", CUR_COUNTRY === "us");
+  banner.classList.toggle("hk", CUR_COUNTRY === "hk");
+  const isTH = CUR_LANG === "th";
+  if (CUR_COUNTRY === "hk") {
+    flag.textContent = "🇭🇰";
+    label.textContent = isTH ? "ตลาดฮ่องกง" : "Hong Kong Market";
+    meta.innerHTML = isTH
+      ? "Top 5 ตามมูลค่าตลาด · benchmark: HSI (2800.HK)"
+      : "Top 5 by HK market cap · benchmark: HSI (2800.HK)";
+  } else {
+    flag.textContent = "🇺🇸";
+    label.textContent = isTH ? "ตลาดสหรัฐอเมริกา" : "United States Market";
+    meta.innerHTML = isTH
+      ? "Top 5 ตามมูลค่าตลาด S&P 500 · benchmark: SPY"
+      : "Top 5 by S&P 500 market cap · benchmark: SPY";
+  }
+}
+
 function applyCountry(c) {
   if (c !== "us" && c !== "hk") c = "us";
   CUR_COUNTRY = c;
@@ -1279,6 +1365,7 @@ function applyCountry(c) {
   if (tag) tag.textContent = c === "hk" ? "data: Yahoo Finance" : "data: Nasdaq";
   // Re-apply language so country-specific overrides kick in
   applyLang(CUR_LANG);
+  updateMarketBanner();
   // Reset charts so they redraw cleanly
   if (ytdChart) { ytdChart.destroy(); ytdChart = null; }
   if (liveCumChart) { liveCumChart.destroy(); liveCumChart = null; }
@@ -1304,6 +1391,7 @@ document.querySelectorAll("#country-toggle button").forEach(b => {
     });
     const tag = document.getElementById("data-src-tag");
     if (tag) tag.textContent = CUR_COUNTRY === "hk" ? "data: Yahoo Finance" : "data: Nasdaq";
+    updateMarketBanner();
     await renderLive();
     startAutoRefresh();
   } catch (e) {
