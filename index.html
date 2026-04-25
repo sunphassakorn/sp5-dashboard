@@ -6,7 +6,7 @@
 <title>S&amp;P Five Strategy Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
@@ -118,7 +118,7 @@
   }
   .btn:hover { background: #C66640; }
   .btn:active { transform: translateY(1px); }
-  main { padding: 32px 32px 60px; max-width: 1280px; margin: 0 auto; }
+  main { padding: 32px 32px 60px; }
   .page { display: none; }
   .page.active { display: block; animation: fade 0.25s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
@@ -332,7 +332,13 @@
     color: var(--text);
     letter-spacing: -0.01em;
   }
-  .intro h2 em { color: var(--accent); font-style: italic; font-weight: 500; }
+  .intro h2 em {
+    color: var(--accent);
+    font-style: normal;
+    font-weight: 700;
+    font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: -0.01em;
+  }
   .intro p {
     margin: 0;
     color: var(--text-soft);
