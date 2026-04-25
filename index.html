@@ -428,6 +428,11 @@
       </div>
       <div class="chart-wrap"><canvas id="chart-ytd"></canvas></div>
     </div>
+
+    <div class="panel">
+      <h2><span data-i18n="h_cumulative">Cumulative Growth</span> <span style="color:var(--muted);font-weight:400;font-style:italic" data-i18n="h_cumulative_sub" id="h-cumsub">· compounded since 2017</span></h2>
+      <div class="chart-wrap tall"><canvas id="chart-cum-live"></canvas></div>
+    </div>
   </section>
 
   <!-- BACKTEST PAGE -->
@@ -699,7 +704,85 @@ async function renderLive() {
 
   setStatus("loading chart…");
   await renderYtdChart();
+  renderLiveCumulative().catch(() => {});
   setStatus("updated " + new Date().toLocaleTimeString());
+}
+
+let liveCumChart = null;
+async function renderLiveCumulative() {
+  // Cumulative % growth using cached annual backtest data (no $).
+  const years = Object.keys(TOP5_BY_YEAR).map(Number).sort((a,b)=>a-b);
+  const perYear = {};
+  for (const y of years) {
+    const tickers = [...TOP5_BY_YEAR[y], "SPY"];
+    try {
+      perYear[y] = await loadEntries(y, tickers);
+    } catch (_) {
+      perYear[y] = { entry: {}, exit: {} };
+    }
+  }
+
+  const usableYears = [];
+  let sp5Mult = 1, spyMult = 1;
+  for (const y of years) {
+    const d = perYear[y];
+    const tickers = TOP5_BY_YEAR[y];
+    const entryMonth = d.entryDate ? d.entryDate.slice(5, 7) : null;
+    if (entryMonth && entryMonth !== "01") continue; // skip partial
+    const rets = [];
+    for (const t of tickers) {
+      const e = d.entry?.[t]; const x = d.exit?.[t];
+      if (e != null && x != null && e > 0) rets.push((x - e) / e);
+    }
+    const spyE = d.entry?.SPY; const spyX = d.exit?.SPY;
+    if (rets.length !== tickers.length || spyE == null || spyX == null) continue;
+    const sp5Ret = rets.reduce((a,b)=>a+b, 0) / rets.length;
+    const spyRet = (spyX - spyE) / spyE;
+    sp5Mult *= (1 + sp5Ret);
+    spyMult *= (1 + spyRet);
+    usableYears.push({ year: y, sp5Cum: (sp5Mult - 1) * 100, spyCum: (spyMult - 1) * 100 });
+  }
+
+  if (!usableYears.length) return;
+  const startY = usableYears[0].year;
+  document.getElementById("h-cumsub").textContent =
+    (CUR_LANG === "th" ? "· ทบต้นตั้งแต่ปี " : "· compounded since ") + startY;
+
+  const labels = [String(startY - 1), ...usableYears.map(u => String(u.year))];
+  const sp5Series = [0, ...usableYears.map(u => u.sp5Cum)];
+  const spySeries = [0, ...usableYears.map(u => u.spyCum)];
+
+  const ctx = document.getElementById("chart-cum-live").getContext("2d");
+  if (liveCumChart) liveCumChart.destroy();
+  liveCumChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: I18N[CUR_LANG].chart_sp5,
+          data: sp5Series,
+          borderColor: "#D97757",
+          backgroundColor: "rgba(217,119,87,0.16)",
+          tension: 0.25,
+          fill: true,
+          pointRadius: 3,
+          borderWidth: 2
+        },
+        {
+          label: I18N[CUR_LANG].chart_spx,
+          data: spySeries,
+          borderColor: "#8FA0B3",
+          backgroundColor: "rgba(143,160,179,0.10)",
+          tension: 0.25,
+          fill: false,
+          pointRadius: 3,
+          borderWidth: 2
+        }
+      ]
+    },
+    options: chartOpts("%", false)
+  });
 }
 
 async function renderYtdChart() {
@@ -1081,6 +1164,7 @@ const I18N = {
     col_sp5pct: 'SP5 %', col_spypct: 'SPY %', col_diff: 'Diff', col_winner: 'Winner',
     h_growth: 'Cumulative Growth', h_growth_sub: '· $1M since 2000',
     h_annual_returns: 'Annual Returns',
+    h_cumulative: 'Cumulative Growth', h_cumulative_sub: '· compounded since 2017',
     chart_sp5: 'S&P Five', chart_spx: 'S&P 500 (SPY)',
     mode_pct: 'Return %', mode_usd: 'Growth $'
   },
@@ -1104,6 +1188,7 @@ const I18N = {
     col_sp5pct: 'SP5 %', col_spypct: 'SPY %', col_diff: 'ส่วนต่าง', col_winner: 'ผู้ชนะ',
     h_growth: 'การเติบโตสะสม', h_growth_sub: '· $1M ตั้งแต่ปี 2000',
     h_annual_returns: 'ผลตอบแทนรายปี',
+    h_cumulative: 'การเติบโตสะสม', h_cumulative_sub: '· ทบต้นตั้งแต่ปี 2017',
     chart_sp5: 'S&P Five', chart_spx: 'S&P 500 (SPY)',
     mode_pct: 'ผลตอบแทน %', mode_usd: 'มูลค่า $'
   }
